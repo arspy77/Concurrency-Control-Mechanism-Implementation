@@ -108,6 +108,8 @@ class LockManager {
   // 'txn_waits_' are invalided by any call to Release() with the entry's
   // txn.
   unordered_map<Txn*, int> txn_waits_;
+
+  deque<LockRequest>* getSpecificLockQueue(const Key* resourceKey);
 };
 
 // Version of the LockManager implementing ONLY exclusive locks.
