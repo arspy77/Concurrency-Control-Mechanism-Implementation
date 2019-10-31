@@ -251,14 +251,13 @@ void TxnProcessor::ApplyWrites(Txn* txn) {
 void TxnProcessor::RunOCCScheduler() {
   Txn* txn;
   while (tp_.Active()) {
-    //Get the next new transaction request (if one is pending) and pass it to an execution thread.
-    //!!! Read Phase !!!
     if (txn_requests_.Pop(&txn)) {
       std::cout << "Test";
       ExecuteTxn(txn);
       bool valid = true;
       for (Key record : txn->readset_) {
-        if (storage_->Timestamp(record) > txn->occ_start_time_){//the record was last updated AFTER this transactions start time) {
+        //the record was last updated AFTER this transactions start time)
+        if (storage_->Timestamp(record) > txn->occ_start_time_){
           valid = false;
         }
       }
@@ -284,6 +283,7 @@ void TxnProcessor::RunOCCScheduler() {
         ApplyWrites(txn);
         txn->status_ = COMMITTED;
       }
+      txn_results_.Push(txn);
     }
   }
 }
