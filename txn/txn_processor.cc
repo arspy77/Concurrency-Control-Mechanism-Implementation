@@ -253,13 +253,42 @@ void TxnProcessor::ApplyWrites(Txn* txn) {
 }
 
 void TxnProcessor::RunOCCScheduler() {
-  //
-  // Implement this method!
-  //
-  // [For now, run serial scheduler in order to make it through the test
-  // suite]
-
-  RunSerialScheduler();
+  Txn* txn;
+  while (tp_.Active()) {
+    //Get the next new transaction request (if one is pending) and pass it to an execution thread.
+    //!!! Read Phase !!!
+    if (txn_requests_.Pop(&txn)) {
+      ExecuteTxn(txn);
+      bool valid = true;
+      for (Key record : txn->readset_) {
+        if (storage_->Timestamp(record) > txn->occ_start_time_){//the record was last updated AFTER this transactions start time) {
+          valid = false;
+        }
+      }
+      for (Key record : txn->writeset_) {
+        //the record was last updated AFTER this transactions start time
+        if (storage_->Timestamp(record) > txn->occ_start_time_){
+          valid = false;
+        }
+      }
+      // Commit/restart
+      if (!valid) {
+        // Cleanup txn
+        txn->reads_.clear();
+        txn->writes_.clear();
+        txn->status_ = INCOMPLETE;
+        // Completely restart the transaction.
+        mutex_.Lock();
+        txn->unique_id_ = next_unique_id_;
+        next_unique_id_++;
+        txn_requests_.Push(txn);
+        mutex_.Unlock();
+      } else {
+        ApplyWrites(txn);
+        txn->status_ = COMMITTED;
+      }
+    }
+  }
 }
 
 void TxnProcessor::RunOCCParallelScheduler() {
