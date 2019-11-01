@@ -75,15 +75,26 @@ bool MVCCStorage::CheckWrite(Key key, int txn_unique_id) {
   // Note that you don't have to call Lock(key) in this method, just
   // call Lock(key) before you call this method and call Unlock(key) afterward.
   
-  
-  return true;
+  int max_version = 0;
+  int current_version = 0;
+  for (int i=0; i < mvcc_data_[key].size(); i++) {
+    current_version = mvcc_data_[key][i]->version_id_;
+    if (current_version > max_version && current_version <= txn_unique_id) {
+      max_version = current_version;
+    }
+  }
+  return max_version < txn_unique_id;
 }
 
 // MVCC Write, call this method only if CheckWrite return true.
 void MVCCStorage::Write(Key key, Value value, int txn_unique_id) {
   //
   // Implement this method!
-  
+  Version* version = new Version();
+  version->value_ = value;
+  version->max_read_id_ = txn_unique_id;
+  version->version_id_ = txn_unique_id;
+
   // Hint: Insert a new version (malloc a Version and specify its value/version_id/max_read_id)
   // into the version_lists. Note that InitStorage() also calls this method to init storage. 
   // Note that you don't have to call Lock(key) in this method, just
