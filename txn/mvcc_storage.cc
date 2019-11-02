@@ -15,6 +15,10 @@ void MVCCStorage::InitStorage() {
 MVCCStorage::~MVCCStorage() {
   for (unordered_map<Key, deque<Version*>*>::iterator it = mvcc_data_.begin();
        it != mvcc_data_.end(); ++it) {
+
+    for (Version * v : *it->second){
+      delete v;
+    }
     delete it->second;          
   }
   
@@ -48,15 +52,15 @@ bool MVCCStorage::Read(Key key, Value* result, int txn_unique_id) {
   int max_version = 0;
   int current_version = 0;
   int version_idx = 0;
-  for (int i=0; i < mvcc_data_[key].size(); i++) {
-    current_version = mvcc_data_[key][i]->version_id_;
+  for (std::size_t i=0; i < mvcc_data_[key]->size(); i++) {
+    current_version = mvcc_data_[key]->operator[](i)->version_id_;
     if (current_version > max_version && current_version <= txn_unique_id) {
       max_version = current_version;
       version_idx = i;
     }
   }
   if (version_idx != 0) {
-    *result = mvcc_data_[key];
+    *result = mvcc_data_[key]->operator[](version_idx)->value_;
     return true;
   }
   return false;
@@ -77,8 +81,8 @@ bool MVCCStorage::CheckWrite(Key key, int txn_unique_id) {
   
   int max_version = 0;
   int current_version = 0;
-  for (int i=0; i < mvcc_data_[key].size(); i++) {
-    current_version = mvcc_data_[key][i]->version_id_;
+  for (std::size_t i=0; i < mvcc_data_[key]->size(); i++) {
+    current_version = mvcc_data_[key]->operator[](i)->version_id_;
     if (current_version > max_version && current_version <= txn_unique_id) {
       max_version = current_version;
     }
@@ -94,7 +98,13 @@ void MVCCStorage::Write(Key key, Value value, int txn_unique_id) {
   version->value_ = value;
   version->max_read_id_ = txn_unique_id;
   version->version_id_ = txn_unique_id;
-
+  /*for (deque<Version*>::iterator it = mvcc_data_[key]->begin(); it != mvcc_data_[key]->end(); ++it) {
+    if ((*it)->version_id_ <= version->version_id_ ){
+      mvcc_data_[key]->insert(it, version);
+      break;
+    }
+  }*/
+  mvcc_data_[key]->push_front(version);
   // Hint: Insert a new version (malloc a Version and specify its value/version_id/max_read_id)
   // into the version_lists. Note that InitStorage() also calls this method to init storage. 
   // Note that you don't have to call Lock(key) in this method, just

@@ -323,7 +323,6 @@ void TxnProcessor::RunOCCScheduler() {
   Txn* txn;
   while (tp_.Active()) {
     if (txn_requests_.Pop(&txn)) {
-      std::cout << "Test";
       ExecuteTxn(txn);
       bool valid = true;
       for (Key record : txn->readset_) {
@@ -353,8 +352,8 @@ void TxnProcessor::RunOCCScheduler() {
       } else {
         ApplyWrites(txn);
         txn->status_ = COMMITTED;
+        txn_results_.Push(txn);
       }
-      txn_results_.Push(txn);
     }
   }
 }
