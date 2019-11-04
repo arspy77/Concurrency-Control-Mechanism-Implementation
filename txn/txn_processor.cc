@@ -70,37 +70,12 @@ Txn* TxnProcessor::GetTxnResult() {
 
 void TxnProcessor::RunScheduler() {
   switch (mode_) {
-    case SERIAL:                 RunSerialScheduler(); break;
     case LOCKING_EXCLUSIVE_ONLY: RunLockingScheduler(); break;
     case OCC:                    RunOCCScheduler(); break;
     case MVCC:                   RunMVCCScheduler();
   }
 }
 
-void TxnProcessor::RunSerialScheduler() {
-  Txn* txn;
-  while (tp_.Active()) {
-    // Get next txn request.
-    if (txn_requests_.Pop(&txn)) {
-      // Execute txn.
-      ExecuteTxn(txn);
-
-      // Commit/abort txn according to program logic's commit/abort decision.
-      if (txn->Status() == COMPLETED_C) {
-        ApplyWrites(txn);
-        txn->status_ = COMMITTED;
-      } else if (txn->Status() == COMPLETED_A) {
-        txn->status_ = ABORTED;
-      } else {
-        // Invalid TxnStatus!
-        DIE("Completed Txn has invalid TxnStatus: " << txn->Status());
-      }
-
-      // Return result to client.
-      txn_results_.Push(txn);
-    }
-  }
-}
 
 void TxnProcessor::RunLockingScheduler() {
   Txn* txn;
@@ -249,54 +224,47 @@ void TxnProcessor::ApplyWrites(Txn* txn) {
 
 void TxnProcessor::RunOCCScheduler() {
   Txn* txn;
+  Txn* finished_txn;
   while (tp_.Active()) {
     if (txn_requests_.Pop(&txn)) {
-      ExecuteTxn(txn);
+      tp_.RunTask(new Method<TxnProcessor, void, Txn*>(
+            this,
+            &TxnProcessor::ExecuteTxn,
+            txn));
+    }
+    while(completed_txns_.Pop(&finished_txn)){
       bool valid = true;
-      for (Key record : txn->readset_) {
+      for (Key record : finished_txn->readset_) {
         //the record was last updated AFTER this transactions start time)
-        if (storage_->Timestamp(record) > txn->occ_start_time_){
+        if (storage_->Timestamp(record) > finished_txn->occ_start_time_){
           valid = false;
         }
       }
-      for (Key record : txn->writeset_) {
+      for (Key record : finished_txn->writeset_) {
         //the record was last updated AFTER this transactions start time
-        if (storage_->Timestamp(record) > txn->occ_start_time_){
+        if (storage_->Timestamp(record) > finished_txn->occ_start_time_){
           valid = false;
         }
       }
       // Commit/restart
       if (!valid) {
         // Cleanup txn
-        txn->reads_.clear();
-        txn->writes_.clear();
-        txn->status_ = INCOMPLETE;
+        finished_txn->reads_.clear();
+        finished_txn->writes_.clear();
+        finished_txn->status_ = INCOMPLETE;
         // Completely restart the transaction.
         mutex_.Lock();
-        txn->unique_id_ = next_unique_id_;
+        finished_txn->unique_id_ = next_unique_id_;
         next_unique_id_++;
-        txn_requests_.Push(txn);
+        txn_requests_.Push(finished_txn);
         mutex_.Unlock();
       } else {
-        ApplyWrites(txn);
-        txn->status_ = COMMITTED;
-        txn_results_.Push(txn);
+        ApplyWrites(finished_txn);
+        finished_txn->status_ = COMMITTED;
+        txn_results_.Push(finished_txn);
       }
     }
   }
-}
-
-void TxnProcessor::RunOCCParallelScheduler() {
-  //
-  // Implement this method! Note that implementing OCC with parallel
-  // validation may need to create another method, like
-  // TxnProcessor::ExecuteTxnParallel.
-  // Note that you can use active_set_ and active_set_mutex_ we provided
-  // for you in the txn_processor.h
-  //
-  // [For now, run serial scheduler in order to make it through the test
-  // suite]
-  RunSerialScheduler();
 }
 
 void TxnProcessor::RunMVCCScheduler() {
