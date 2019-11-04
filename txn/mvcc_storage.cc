@@ -104,6 +104,7 @@ void MVCCStorage::Write(Key key, Value value, int txn_unique_id) {
       break;
     }
   }*/
+  mvcc_data_[key] = new deque<Version*>();
   mvcc_data_[key]->push_front(version);
   // Hint: Insert a new version (malloc a Version and specify its value/version_id/max_read_id)
   // into the version_lists. Note that InitStorage() also calls this method to init storage. 
